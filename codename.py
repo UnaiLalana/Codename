@@ -4,15 +4,15 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QGridLayout, QPushButton, QLabel,
     QVBoxLayout, QHBoxLayout, QMessageBox, QStackedLayout
 )
-from PySide6.QtCore import Qt
-
+from PySide6.QtCore import Qt, QTimer
+from time import sleep
 
 def generate_agent_board():
     board = np.zeros((5, 5))
     indices = np.random.choice(25, 9 + 9 + 1, replace=False)
-    board.flat[indices[:9]] = 1  # Blue
-    board.flat[indices[9:18]] = 2  # Red
-    board.flat[indices[18]] = -1  # Black
+    board.flat[indices[:9]] = 1
+    board.flat[indices[9:18]] = 2
+    board.flat[indices[18]] = -1
     return board
 
 
@@ -28,7 +28,7 @@ def generate_player_board():
 class Codenames(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Codenames - PySide6")
+        self.setWindowTitle("Codenames")
         self.setMinimumSize(700, 700)
 
         self.agent_board = generate_agent_board()
@@ -36,7 +36,7 @@ class Codenames(QWidget):
         self.revealed = np.zeros((5, 5), dtype=bool)
         self.score_blue = 0
         self.score_red = 0
-        self.team = 1  # 1: Blue, 2: Red
+        self.team = 1
         self.guesses_left = 0
         self.game_started = False
 
@@ -52,7 +52,7 @@ class Codenames(QWidget):
         self.main_widget = QWidget()
         layout = QVBoxLayout()
 
-        self.status_label = QLabel("Vista de espía: Haz clic para comenzar")
+        self.status_label = QLabel("Spymaster view: Click to start")
         self.status_label.setAlignment(Qt.AlignCenter)
         self.status_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         layout.addWidget(self.status_label)
@@ -64,7 +64,7 @@ class Codenames(QWidget):
             for j in range(5):
                 btn = QPushButton("")
                 btn.setMinimumSize(100, 80)
-                btn.setStyleSheet(self.get_style(self.agent_board[i][j], reveal=True))
+                btn.setStyleSheet(self.get_style(self.agent_board[i][j]))
                 btn.clicked.connect(lambda checked, x=i, y=j: self.handle_click(x, y))
                 self.grid.addWidget(btn, i, j)
                 row.append(btn)
@@ -76,6 +76,12 @@ class Codenames(QWidget):
         self.score_label.setStyleSheet("font-size: 16px;")
         layout.addWidget(self.score_label)
 
+        self.continue_button = QPushButton("Continue")
+        self.continue_button.setStyleSheet("font-size: 16px; padding: 10px;")
+        self.continue_button.clicked.connect(self.show_guess_selector)
+        layout.addWidget(self.continue_button)
+        self.continue_button.hide()
+
         self.main_widget.setLayout(layout)
         self.layout.addWidget(self.main_widget)
 
@@ -83,7 +89,7 @@ class Codenames(QWidget):
         self.selector_widget = QWidget()
         vbox = QVBoxLayout()
 
-        title = QLabel("Selecciona el número de intentos")
+        title = QLabel("Select the number of guesses")
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet("font-size: 18px; font-weight: bold;")
         vbox.addWidget(title)
@@ -91,7 +97,7 @@ class Codenames(QWidget):
         grid = QGridLayout()
         for i in range(1, 10):
             btn = QPushButton(str(i))
-            btn.setFixedSize(80, 80)
+            btn.setFixedSize(180, 180)
             btn.setStyleSheet("font-size: 20px;")
             btn.clicked.connect(lambda checked, n=i: self.set_guesses(n))
             grid.addWidget(btn, (i - 1) // 3, (i - 1) % 3)
@@ -117,12 +123,20 @@ class Codenames(QWidget):
         self.prompt_turn()
 
     def prompt_turn(self):
+        self.status_label.setText(f"{'🔵 Blue' if self.team == 1 else '🔴 Red'}: Look at the board")
+        self.continue_button.show()
+        self.layout.setCurrentWidget(self.main_widget)
+
+    def show_guess_selector(self):
+        self.continue_button.hide()
         self.layout.setCurrentWidget(self.selector_widget)
 
     def set_guesses(self, guesses):
         self.guesses_left = guesses
         self.update_status()
         self.layout.setCurrentWidget(self.main_widget)
+
+
 
     def reveal_word(self, x, y):
         if self.revealed[x, y] or self.guesses_left <= 0:
@@ -132,25 +146,25 @@ class Codenames(QWidget):
         agent = self.agent_board[x, y]
         btn = self.buttons[x][y]
         btn.setEnabled(False)
-        btn.setStyleSheet(self.get_style(agent, reveal=True))
+        btn.setStyleSheet(self.get_style(agent))
         btn.setText(self.word_board[x][y])
 
         end_turn = False
         if agent == 1:
             if self.team == 1:
-                self.score_blue += 1
                 self.guesses_left -= 1
             else:
                 end_turn = True
+            self.score_blue += 1
         elif agent == 2:
             if self.team == 2:
-                self.score_red += 1
                 self.guesses_left -= 1
             else:
                 end_turn = True
+            self.score_red += 1
         elif agent == -1:
-            QMessageBox.information(self, "Game Over", f"El equipo {'Azul' if self.team == 1 else 'Rojo'} eligió al agente negro.\n¡Fin del juego!")
-            self.close()
+            QTimer.singleShot(500, lambda: QMessageBox.information(self, "Game Over", f"Team {'Blue' if self.team == 1 else 'Red'} chose the black agent.\nGame over!"))
+            QTimer.singleShot(1000, self.close)
             return
         else:
             self.guesses_left -= 1
@@ -160,24 +174,26 @@ class Codenames(QWidget):
         self.check_win()
 
         if self.guesses_left <= 0 or end_turn:
-            self.team = 2 if self.team == 1 else 1
-            self.prompt_turn()
+            QTimer.singleShot(500, self.next_turn)
+
+    def next_turn(self):
+        self.team = 2 if self.team == 1 else 1
+        self.prompt_turn()
+
 
     def update_status(self):
-        self.status_label.setText(f"Turno: {'🔵 Azul' if self.team == 1 else '🔴 Rojo'} - Intentos: {self.guesses_left}")
+        self.status_label.setText(f"Turn: {'🔵 Blue' if self.team == 1 else '🔴 Red'} - Guesses: {self.guesses_left}")
         self.score_label.setText(f"🔵 {self.score_blue} - {self.score_red} 🔴")
 
     def check_win(self):
         if self.score_blue >= 9:
-            QMessageBox.information(self, "Victoria", "¡El equipo Azul gana!")
+            QMessageBox.information(self, "Victory", "Team Blue wins!")
             self.close()
         elif self.score_red >= 9:
-            QMessageBox.information(self, "Victoria", "¡El equipo Rojo gana!")
+            QMessageBox.information(self, "Victory", "Team Red wins!")
             self.close()
 
-    def get_style(self, agent, reveal=False):
-        if not reveal:
-            return "font-size: 14px;"
+    def get_style(self, agent):
         color = {
             1: "blue",
             2: "red",
