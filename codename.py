@@ -54,7 +54,7 @@ class Codenames(QWidget):
 
         self.status_label = QLabel("Spymaster view: Click to start")
         self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+        self.status_label.setStyleSheet("font-size: 36px; font-weight: bold;")
         layout.addWidget(self.status_label)
 
         self.grid = QGridLayout()
@@ -117,7 +117,7 @@ class Codenames(QWidget):
             for j in range(5):
                 word = self.word_board[i][j]
                 self.buttons[i][j].setText(word)
-                self.buttons[i][j].setStyleSheet("font-size: 14px;")
+                self.buttons[i][j].setStyleSheet("font-size: 28px;")
 
         self.game_started = True
         self.prompt_turn()
@@ -201,7 +201,7 @@ class Codenames(QWidget):
             0: "gray"
         }.get(agent, "lightgray")
         fg = "white" if agent in [1, 2, -1] else "black"
-        return f"background-color: {color}; color: {fg}; font-weight: bold; font-size: 14px;"
+        return f"background-color: {color}; color: {fg}; font-weight: bold; font-size: 28px;"
 
 
 if __name__ == "__main__":
