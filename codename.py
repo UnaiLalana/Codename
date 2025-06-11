@@ -6,6 +6,12 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer
 from time import sleep
+import qrcode
+from PySide6.QtGui import QPixmap, QImage
+from io import BytesIO
+from PySide6.QtWidgets import QSizePolicy
+
+
 
 def generate_agent_board():
     board = np.zeros((5, 5))
@@ -47,43 +53,104 @@ class Codenames(QWidget):
         self.init_guess_selector()
 
         self.layout.setCurrentWidget(self.main_widget)
+        self.start_game()
+
+    
+    def generate_agent_qr(self):
+        # Salva anche la board in HTML leggibile dagli agenti
+        html_content = "<html><head><meta charset='utf-8'><style>td{width:80px;height:80px;text-align:center;font-size:18px;font-weight:bold;}</style></head><body><table border='1' cellspacing='0'>"
+
+        color_map = {
+            1: "#007BFF",   # blu
+            2: "#DC3545",   # rosso
+            -1: "#000000",  # nero
+            0: "#CCCCCC"    # grigio per neutrali
+        }
+
+        for i in range(5):
+            html_content += "<tr>"
+            for j in range(5):
+                word = self.word_board[i][j]
+                agent = self.agent_board[i][j]
+                color = color_map.get(agent, "#FFFFFF")
+                text_color = "white" if agent in [1, 2, -1] else "black"
+                html_content += f"<td style='background-color:{color}; color:{text_color};'>{word}</td>"
+            html_content += "</tr>"
+        html_content += "</table></body></html>"
+
+        # Salva come file HTML da servire
+        with open("agent_board.html", "w", encoding="utf-8") as f:
+            f.write(html_content)
+        np.save("agent_board.npy", self.agent_board)
+        np.save("word_board.npy", self.word_board)
+
+        # QR code che punta alla pagina HTML (tramite Flask presumibilmente)
+        import socket
+        ip = socket.gethostbyname(socket.gethostname())
+        url = f"http://{ip}:5000/"
+
+        qr = qrcode.QRCode(box_size=5, border=2)
+        qr.add_data(url)
+        qr.make(fit=True)
+        img = qr.make_image(fill="black", back_color="white")
+
+        buffer = BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+
+        qimage = QImage.fromData(buffer.read())
+        pixmap = QPixmap.fromImage(qimage)
+        return pixmap
+
+
+
 
     def init_main_ui(self):
         self.main_widget = QWidget()
         layout = QVBoxLayout()
 
-        self.status_label = QLabel("Spymaster view: Click to start")
+        self.status_label = QLabel("Spymasters: scan QR to view the board")
         self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setStyleSheet("font-size: 36px; font-weight: bold;")
+        self.status_label.setStyleSheet("font-size: 24px; font-weight: bold;")
         layout.addWidget(self.status_label)
 
-        self.grid = QGridLayout()
-        self.buttons = []
-        for i in range(5):
-            row = []
-            for j in range(5):
-                btn = QPushButton("")
-                btn.setMinimumSize(100, 80)
-                btn.setStyleSheet(self.get_style(self.agent_board[i][j]))
-                btn.clicked.connect(lambda checked, x=i, y=j: self.handle_click(x, y))
-                self.grid.addWidget(btn, i, j)
-                row.append(btn)
-            self.buttons.append(row)
-        layout.addLayout(self.grid)
+        self.qr_label = QLabel()
+        self.qr_label.setAlignment(Qt.AlignCenter)
+        self.qr_label.setPixmap(self.generate_agent_qr())
+        layout.addWidget(self.qr_label)
 
         self.score_label = QLabel("🔵 0 - 0 🔴")
         self.score_label.setAlignment(Qt.AlignCenter)
-        self.score_label.setStyleSheet("font-size: 16px;")
+        self.score_label.setStyleSheet("font-size: 20px;")
         layout.addWidget(self.score_label)
+
+        self.grid_widget = QWidget()
+        self.grid_layout = QGridLayout()
+        self.buttons = [[None for _ in range(5)] for _ in range(5)]
+
+        for i in range(5):
+            for j in range(5):
+                btn = QPushButton("")
+                btn.setMinimumSize(120, 120)
+                btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                btn.setStyleSheet("font-size: 24px;")
+
+                btn.clicked.connect(lambda checked, x=i, y=j: self.handle_click(x, y))
+                self.grid_layout.addWidget(btn, i, j)
+                self.buttons[i][j] = btn
+
+        self.grid_widget.setLayout(self.grid_layout)
+        layout.addWidget(self.grid_widget)
 
         self.continue_button = QPushButton("Continue")
         self.continue_button.setStyleSheet("font-size: 16px; padding: 10px;")
         self.continue_button.clicked.connect(self.show_guess_selector)
         layout.addWidget(self.continue_button)
-        self.continue_button.hide()
 
         self.main_widget.setLayout(layout)
         self.layout.addWidget(self.main_widget)
+
+
 
     def init_guess_selector(self):
         self.selector_widget = QWidget()
@@ -133,8 +200,10 @@ class Codenames(QWidget):
 
     def set_guesses(self, guesses):
         self.guesses_left = guesses
+        self.qr_label.hide()  # Nasconde il QR code una volta che il gioco comincia
         self.update_status()
         self.layout.setCurrentWidget(self.main_widget)
+
 
 
 
@@ -210,3 +279,5 @@ if __name__ == "__main__":
     window = Codenames()
     window.show()
     sys.exit(app.exec())
+
+
